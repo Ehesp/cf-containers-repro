@@ -1,23 +1,20 @@
-# syntax=docker/dockerfile:1
+FROM oven/bun:latest AS builder
 
-FROM golang:1.24-alpine AS build
-
-# Set destination for COPY
 WORKDIR /app
 
-# Download any Go modules
-COPY container_src/go.mod ./
-RUN go mod download
+# Copy the entire repo to the docker image
+COPY / ./
 
-# Copy container source code
-COPY container_src/*.go ./
+# Install dependencies (including workspace deps)
+RUN bun install --frozen-lockfile
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux go build -o /server
+RUN bun build ./container_src/index.ts --compile --minify --outfile container.bun
 
-FROM scratch
-COPY --from=build /server /server
+FROM ubuntu
+
+RUN apt-get update && apt-get install -y git
+COPY --from=builder /app/container.bun /container.bun
+
 EXPOSE 8080
 
-# Run
-CMD ["/server"]
+CMD ["/container.bun"]
