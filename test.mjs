@@ -4,7 +4,7 @@ async function main() {
     method: "POST",
     body: JSON.stringify({}),
     headers: {
-      "Accept-Encoding": "identity",
+      "Accept-Encoding": "identity", // Tell the worker to not compress the stream
     },
   });
 

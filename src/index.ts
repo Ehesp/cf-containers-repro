@@ -45,7 +45,17 @@ app.post("/stream", async (c) => {
   const container = getContainer(c.env.MY_CONTAINER);
   const response = await container.stream();
 
-  return new Response(response.body, {
+  const stream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of response.body!) {
+        console.log("Worker>", new TextDecoder().decode(chunk));
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
     headers: response.headers,
     status: response.status,
     statusText: response.statusText,

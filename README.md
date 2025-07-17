@@ -1,59 +1,71 @@
-# Containers Starter
+# CF Containers Repro - Streaming
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/containers-template)
+This repo contains a reproduction of an issue on Cloudflare Containers.
 
-![Containers Template Preview](https://imagedelivery.net/_yJ02hpOMj_EnGvsU2aygw/5aba1fb7-b937-46fd-fa67-138221082200/public)
+## Setup
 
-<!-- dash-content-start -->
+- Container: Bun server returning a ReadableStream endpoint, which enqueues a message every second for 10 seconds.
+- DO: Proxies to the stream endpoint
+- Worker: RPC to the DO `stream` method
+- `test.mjs`: A simple node script to consume the stream
 
-This is a [Container](https://developers.cloudflare.com/containers/) starter template.
+## Issue
 
-It demonstrates basic Container coniguration, launching and routing to individual container, load balancing over multiple container, running basic hooks on container status changes.
+When running the node script against the container, `node text.mjs` we get the following, inconsistent output:
 
-<!-- dash-content-end -->
+Run 1:
 
-Outside of this repo, you can start a new project with this template using [C3](https://developers.cloudflare.com/pages/get-started/c3/) (the `create-cloudflare` CLI):
-
-```bash
-npm create cloudflare@latest -- --template=cloudflare/templates/containers-template
+```
+client headers {
+  'cache-control': 'no-cache',
+  'content-encoding': 'identity',
+  'content-type': 'text/plain',
+  date: 'Thu, 17 Jul 2025 08:54:32 GMT',
+  'transfer-encoding': 'chunked'
+}
+Client> Hello, world! 10
+Client> Hello, world! 9
 ```
 
-## Getting Started
+Run 2:
 
-First, run:
-
-```bash
-npm install
-# or
-yarn install
-# or
-pnpm install
-# or
-bun install
+```
+client headers {
+  'cache-control': 'no-cache',
+  'content-encoding': 'identity',
+  'content-type': 'text/plain',
+  date: 'Thu, 17 Jul 2025 08:58:56 GMT',
+  'transfer-encoding': 'chunked'
+}
+Client> Hello, world! 10
+Client> Hello, world! 9
+Client> Hello, world! 8
+Client> Hello, world! 7
+Client> Hello, world! 6
+Client> Hello, world! 5
+Client> Hello, world! 4
 ```
 
-Then run the development server (using the package manager of your choice):
+Note; sometimes it does complete.
 
-```bash
-npm run dev
+I've tried a whole bunch of things - proxying the stream at each layer, e.g.
+
+```ts
+  const stream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of response.body!) {
+        console.log("Worker>", new TextDecoder().decode(chunk));
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
 ```
 
-Open [http://localhost:8787](http://localhost:8787) with your browser to see the result.
-
-You can start editing your Worker by modifying `src/index.ts` and you can start
-editing your Container by editing the content of `container_src`.
-
-## Deploying To Production
-
-| Command          | Action                                |
-| :--------------- | :------------------------------------ |
-| `npm run deploy` | Deploy your application to Cloudflare |
-
-## Learn More
-
-To learn more about Containers, take a look at the following resources:
-
-- [Container Documentation](https://developers.cloudflare.com/containers/) - learn about Containers
-- [Container Class](https://github.com/cloudflare/containers) - learn about the Container helper class
-
-Your feedback and contributions are welcome!
+However the results are the same.
